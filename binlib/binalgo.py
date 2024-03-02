@@ -22,7 +22,7 @@ def Opt(val, cand, mode):
             return cand, True
         return val, False
 
-def scoreDP(val, freq, mode = 'max', metric = 'mi', L = 2, R = 15):
+def scoreDP(val, freq, mode = 'max', metric = 'mi', L = 2, R = 15, cost_mat = None):
     '''
     Proposed score-wise Dynamic programming algorithm
     NOTE: For DP[v][l], v is 1-based and l is 1-based
@@ -36,6 +36,7 @@ def scoreDP(val, freq, mode = 'max', metric = 'mi', L = 2, R = 15):
     metric {'entropy', ...} : Chosen metric (Default: 'entropy')
     L                       : Maximum number of discretized bin (Default: 5) 
     R                       : Maximum number of discretized bin (Default: 15) 
+    cost_mat {ndarray}      : The cost matrix
 
     Output:
     -----
@@ -47,21 +48,28 @@ def scoreDP(val, freq, mode = 'max', metric = 'mi', L = 2, R = 15):
     print("Start of scoreDP")
     n_val = freq.shape[1] - 1
 
-    dp = np.zeros(shape = (n_val + 10, R + 10)) # dp solution table
-    trace = np.zeros(shape = (n_val + 10, R + 10)) - 1 # trace solutions
+    dp = np.zeros(shape = (n_val + 5, R + 5)) # dp solution table
+    trace = np.zeros(shape = (n_val + 5, R + 5)) - 1 # trace solutions
     dp[n_val][1] = metrics.getMetric(freq[:, 1:], freq, metric) # 1-bin solution
+
+    # Cost matrix
+    if cost_mat is not None:
+        cost = cost_mat
+    else:
+        cost = np.zeros(shape = (n_val + 5, n_val + 5))
+        for i in range(1, n_val+1):
+            for j in range(i, n_val+1):
+                cost[i, j] = metrics.getMetric(freq[:, i:j+1], freq, metric) # cost(i, j)
     
     opt_l = L # optimal number of bin, use for tracing
     opt_score = 0 # optimal score, use for calculating opt_l
     
-    dp_record = [dp[n_val][1]] # Initialize dp_record with dp[n_val][1]
-    
     # Initialize
     for v in range(1, n_val+1):
-        dp[v, 1] = metrics.getMetric(freq[:, 1:v+1], freq, metric)
+        dp[v, 1] = cost[1, v]
     
     # Score-wise DP
-    for l in range(2, R+1):
+    for l in range(2, min(n_val, R)+1):
         # Consider the l-th layer
         
         for v in range(l, n_val+1):
@@ -70,7 +78,7 @@ def scoreDP(val, freq, mode = 'max', metric = 'mi', L = 2, R = 15):
 
             for u in range(l-1, v):
                 # The bin starts with u+1
-                cand_dp = dp[u, l-1] + metrics.getMetric(freq[:, u+1:v+1], freq, metric)
+                cand_dp = dp[u, l-1] + cost[u+1, v]
                 dp[v, l], update = Opt(dp[v, l], cand_dp, mode) # Update dp w.r.t mode (min/max)
                 
                 if update:
@@ -82,9 +90,9 @@ def scoreDP(val, freq, mode = 'max', metric = 'mi', L = 2, R = 15):
             opt_l = l # Update opt_l
 
         print(f'{metric}: {dp[n_val, l]:.3f}, layer: {l}, mode: {mode}')
-        dp_record.append(dp[n_val, l])
 
     # Rules tracing
+    opt_l = max(opt_l, L) # Ensure that the binning solution has at least L bins
     cur_bin = int(n_val)
     split_val = []
     cur_l = opt_l
