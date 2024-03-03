@@ -45,7 +45,7 @@ def scoreDP(val, freq, mode = 'max', metric = 'mi', L = 2, R = 15, cost_mat = No
     opt_L {int}             : The number of discretized bin chosen
     
     '''
-    print("Start of scoreDP")
+    # print("Start of scoreDP")
     n_val = freq.shape[1] - 1
 
     dp = np.zeros(shape = (n_val + 5, R + 5)) # dp solution table
@@ -89,7 +89,7 @@ def scoreDP(val, freq, mode = 'max', metric = 'mi', L = 2, R = 15, cost_mat = No
         if update:
             opt_l = l # Update opt_l
 
-        print(f'{metric}: {dp[n_val, l]:.3f}, layer: {l}, mode: {mode}')
+        # print(f'{metric}: {dp[n_val, l]:.3f}, layer: {l}, mode: {mode}')
 
     # Rules tracing
     opt_l = max(opt_l, L) # Ensure that the binning solution has at least L bins

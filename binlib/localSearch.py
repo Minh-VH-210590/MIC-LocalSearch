@@ -19,6 +19,29 @@ class Solution:
         for i in range(self.maskY.shape[0]):
             enc_str = enc_str + str(self.maskY[i])
         return enc_str
+    
+    def _bit_cnt(self, mask):
+        '''
+        Count the number of active bit over mask
+        '''
+        cnt = 0
+        for i in range(len(mask)):
+            if mask[i] == 1:
+                cnt += 1
+        return cnt
+    
+    def _export(self, out_dir, extras= None):
+        '''
+        Export solution
+        '''
+        with open(out_dir, 'a') as file:
+            file.write(f'Final MIC: {self.score}\n')
+            file.write(f'Feature #1 is discretized into {self._bit_cnt(self.maskX) + 1} bins.\n')
+            file.write(f'Feature #2 is discretized into {self._bit_cnt(self.maskY) + 1} bins.\n')
+            if extras is not None:
+                for extra in extras:
+                    file.write(str(extra) + '\n')
+            file.close()
 
 # Operators #
 def turnOn(mask):
@@ -61,7 +84,7 @@ def turnOff(mask):
 
 def localMove(mask, maxD= 3):
     '''
-    Randomly move one split points ATMOST maxD units to the RIGHT along the value axis
+    Randomly move one split points AT MOST maxD units to the right or left along the value axis
 
     Input:
     -----
@@ -76,24 +99,44 @@ def localMove(mask, maxD= 3):
     n = mask.shape[0]
     nLoop = 10
     while nLoop > 0:
-        patience = 6
+        patience = 10
         nLoop -= 1
+
+        # Choose bitmask to move
         i = np.random.randint(0, n)
         while mask[i] != 1:
             i = np.random.randint(0, n)
+            patience -= 1
+            if patience == 0:
+                break
+
+        if patience == 0:
+            break
+        
+        patience = 6
         
         # Choose moving distance
         d = np.random.randint(1, maxD + 1)
-        while mask[min(i+d, n-1)] == 1:
+        if np.random.randint(0, 2) == 1:
+            d = -d
+        di = min(i+d, n-1)
+        di = max(di, 0)
+
+        while mask[di] == 1:
             d = np.random.randint(1, maxD + 1)
+            if np.random.randint(0, 2) == 1:
+                d = -d
+            di = min(i+d, n-1)
+            di = max(di, 0)
+            
             patience -= 1
             if patience == 0:
                 break
         
         # If there are a moving scheme for current (i, maxD), conclude the new mask
         if patience != 0:
-            mask[i] = 0 # Move the split point from i to i+d
-            mask[i+d] = 1
+            mask[i] = 0 # Move the split point from i to di
+            mask[di] = 1
             break
     
     return mask

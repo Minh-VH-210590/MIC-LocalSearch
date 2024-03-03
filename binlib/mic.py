@@ -41,7 +41,7 @@ def genSolution(df, X, Y, nX= 2, Bn= None):
     return S
 
 
-def Opt_YbyX(df, X, Y, splitX, Bn= None):
+def Opt_YbyX(df, X, Y, splitX, Bn= None, cost_mat = None):
     '''
     Return candidate MIC-score given a fixed partition over X and a grid budget: xy <= Bn
     '''
@@ -57,7 +57,7 @@ def Opt_YbyX(df, X, Y, splitX, Bn= None):
 
     nY = int(Bn / nX)
 
-    print(f'{X}={nX}; {Y}={nY}')
+    # print(f'{X}={nX}; {Y}={nY}')
 
     if nX <= 1 or nY <= 1:
         return 0, []
@@ -73,7 +73,7 @@ def Opt_YbyX(df, X, Y, splitX, Bn= None):
     df[X] = oldX # Restore original df[X]
     return score, splitY
 
-def MIC_LocalSearch(df, X, Y, T, S:localSearch.Solution, p= [0.5, 0.5, 0.5, 0.9], maxD= 3):
+def MIC_LocalSearch(df, X, Y, T, S:localSearch.Solution, p= [0.1, 0.1, 0.1, 0.9], maxD= 3):
     '''
     Calculate MIC using Local Search.
 

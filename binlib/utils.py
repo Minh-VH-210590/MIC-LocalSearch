@@ -2,8 +2,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from binlib import utils, metrics
-
 def visualize(viz, xtitle, ytitle, title, show = False, dir = None, legend = True):
     '''
     Visualize multiple plots on a same fig
@@ -78,6 +76,8 @@ def makePrebins(df, feature, label, num_classes = 2):
     val = np.sort(val)
     val = cleanseNA(val)
 
+    # print(df[label])
+
     catcode = pd.Series(pd.Categorical(df[label], categories= df[label].unique())).cat.codes
     # print(catcode)
     num_classes = max(catcode) + 1
@@ -135,6 +135,7 @@ def discretizeFea(df, fea, split):
     -----
     A ndarray of discretized feature, with values ranging from 0 to n_bin-1
     '''
+    # print(df[fea])
     full_split = [df[fea].min()-1] + list(split) + [df[fea].max()+1] # Adding the smallest and largest value to the split-list
     return pd.cut(df[fea], bins= full_split, labels= False)
 
