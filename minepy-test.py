@@ -6,7 +6,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from binlib import mic
+from minepy import MINE
 
 DATA = sys.argv[1]
 DATASET = sys.argv[2]
@@ -23,17 +23,15 @@ X = FEATURE_X
 Y = FEATURE_Y
 df = df.dropna(subset= [X], inplace= False, ignore_index= True)
 df = df.dropna(subset= [Y], inplace= False, ignore_index= True)
-# print(df.head())
 
-start_time = time.time()
-S0 = mic.genSolution(df, X, Y)
-S = mic.MIC_LocalSearch(df, X, Y, T, S0)
-print("MIC=", S.score)
-print("Runtime:", time.time() - start_time)
-
-extras = [f"Runtime: {time.time() - start_time}"]
-
-S._export(LOG, extras)
+mine_approx = MINE(alpha=0.6, c=15, est="mic_approx")
+mine_approx.compute_score(df[X], df[Y])
 with open(CSV, 'a') as file:
-    file.write(f'{DATASET},{X},{Y},mic-ls,{S.score},{T}\n')
+    file.write(f'{DATASET},{X},{Y},mic-approx,{mine_approx.mic()},{T}\n')
+    file.close()
+
+mine_e = MINE(alpha=0.6, c=15, est="mic_e")
+mine_e.compute_score(df[X], df[Y])
+with open(CSV, 'a') as file:
+    file.write(f'{DATASET},{X},{Y},mic-e,{mine_approx.mic()},{T}\n')
     file.close()
