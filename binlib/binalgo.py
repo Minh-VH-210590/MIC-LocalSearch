@@ -102,6 +102,8 @@ def scoreDP(val, freq, mode = 'max', metric = 'mi', L = 2, R = 15, cost_mat = No
         cur_bin = int(trace[cur_bin][cur_l])
         cur_l -= 1
 
+    split_val.sort()
+
     return opt_score, split_val, opt_l
 
 def equalSize(df, FEATURE, n_bin, freq, val, metric = 'entropy'):

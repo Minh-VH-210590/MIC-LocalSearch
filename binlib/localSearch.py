@@ -63,6 +63,26 @@ def turnOn(mask):
     mask[i] = 1
     return mask
 
+def exhaustTurnOn(mask):
+    '''
+    Turn on ONE bitmask.
+
+    Output:
+    -----
+    mask_list {List}   : List of masks after modification
+    '''
+    n = mask.shape[0]
+    S = Solution(mask, mask, 1, 0)
+    if S._bit_cnt(mask) * 2 >= n ** 0.6:
+        return []
+    mask_list = []
+    for i in range(n):
+        if mask[i] == 0:
+            mask[i] = 1
+            mask_list.append(np.copy(mask))
+            mask[i] = 0
+    return mask_list
+
 def turnOff(mask):
     '''
     Randomly turn off ONE bitmask.
@@ -81,6 +101,26 @@ def turnOff(mask):
             break
     mask[i] = 0
     return mask
+
+def exhaustTurnOff(mask):
+    '''
+    Turn off ONE bitmask.
+
+    Output:
+    -----
+    mask_list {List}   : List of masks after modification
+    '''
+    n = mask.shape[0]
+    S = Solution(mask, mask, 1, 0)
+    if S._bit_cnt(mask) <= 1:
+        return []
+    mask_list = []
+    for i in range(n):
+        if mask[i] == 1:
+            mask[i] = 0
+            mask_list.append(np.copy(mask))
+            mask[i] = 1
+    return mask_list
 
 def localMove(mask, maxD= 3):
     '''
@@ -141,7 +181,43 @@ def localMove(mask, maxD= 3):
     
     return mask
 
-def Mutate(S, p, maxD):
+def exhaustMove(mask, pos):
+    '''
+    Move one split point at position 'pos' of mask. 
+
+    Input:
+    -----
+    mask {np.ndarray}   : Original mask
+
+    Output:
+    -----
+    mask_list {List}   : List of mask after modification
+    '''
+    if mask[pos] == 0:
+        return []
+    mask_list = []
+    n = mask.shape[0]
+    
+    mask[pos] = 0
+
+    ptr = pos - 1
+    while ptr >= 0 and mask[ptr] == 0:
+        mask[ptr] = 1
+        mask_list.append(np.copy(mask))
+        mask[ptr] = 0
+        ptr -= 1
+
+    ptr = pos + 1
+    while ptr < n and mask[ptr] == 0:
+        mask[ptr] = 1
+        mask_list.append(np.copy(mask))
+        mask[ptr] = 0
+        ptr += 1
+
+    return mask_list
+
+
+def Mutate(S, p, maxD, Bn):
     '''
     Mutate current solution S, using the probability vector p for operators
 
@@ -151,26 +227,98 @@ def Mutate(S, p, maxD):
     p[3]: p_move
     '''
     nS = Solution(S.maskX, S.maskY, S.fixCol, S.score)
-
-    # Switch fixed column
+    
     if np.random.binomial(1, p[0]) == 1:
         nS.fixCol = 1 - nS.fixCol
+        return [nS] # Change fixCol without any further mutation
     
+    # Set fixCol
     mask = nS.maskY
     if nS.fixCol == 0:
         mask = nS.maskX
+    nMask = nS._bit_cnt(mask)
 
-    # Mutate operations
-    if np.random.binomial(1, p[1]) == 1:
-        turnOn(mask)
-    if np.random.binomial(1, p[2]) == 1:
-        turnOff(mask)
-    if np.random.binomial(1, p[3]) == 1:
-        localMove(mask, maxD)
+    incFlag = True
+    if 2 * (nMask + 1) >= Bn:
+        incFlag = False
+
+    decFlag = True
+    if nMask <= 1:
+        decFlag = False
+
+    # Random mutation
+    if np.random.binomial(1, p[3]) == 1 or ((not incFlag) and (not decFlag)):
+        mask = localMove(mask, maxD)
+    else:
+        if np.random.binomial(1, p[1]) == 1 and incFlag:
+            mask = turnOn(mask)
+        else:
+            mask = turnOff(mask)
+            # if np.random.binomial(1, p[2]) == 1:
+            #     mask = turnOff(mask)
 
     if nS.fixCol == 0:
         nS.maskX = mask
     else:
         nS.maskY = mask
 
-    return nS
+    return [nS]
+
+def exhaustMutate(S:Solution):
+    '''
+    Exhaustively mutate current solution S, using the probability vector p for operators.
+
+    Assuming X-axis is mutated
+    '''
+    candidates = []
+    SmaskX = S.maskX
+    SmaskY = S.maskY
+    SfixCol = S.fixCol
+    Sscore = S.score
+
+    mask = SmaskX
+    if S.fixCol == 1:
+        mask = SmaskY
+
+    # TurnOn
+    masks = exhaustTurnOn(mask)
+    if S.fixCol == 0:
+        for m in masks:
+            nS = Solution(m, SmaskY, SfixCol, Sscore)
+            candidates.append((nS, 'turnOn'))
+    else:
+        for m in masks:
+            nS = Solution(SmaskX, m, SfixCol, Sscore)
+            candidates.append((nS, 'turnOn'))
+
+    # TurnOff
+    masks = exhaustTurnOff(mask)
+    if S.fixCol == 0:
+        for m in masks:
+            nS = Solution(m, SmaskY, SfixCol, Sscore)
+            candidates.append((nS, 'turnOff'))
+    else:
+        for m in masks:
+            nS = Solution(SmaskX, m, SfixCol, Sscore)
+            candidates.append((nS, 'turnOff'))
+
+    # Move
+    n = len(mask)
+    masks = []
+    for i in range(n):
+        if mask[i] == 1:
+            masks = masks + exhaustMove(mask, i)
+    
+    if S.fixCol == 0:
+        for m in masks:
+            nS = Solution(m, SmaskY, SfixCol, Sscore)
+            candidates.append((nS, 'Move'))
+    else:
+        for m in masks:
+            nS = Solution(SmaskX, m, SfixCol, Sscore)
+            candidates.append((nS, 'Move'))
+
+    # Adding axis-switch solution by the end of candidates
+    # candidates.append((Solution(SmaskX, SmaskY, 1 - SfixCol, Sscore), 'Switch'))
+    
+    return candidates

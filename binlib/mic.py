@@ -41,7 +41,7 @@ def genSolution(df, X, Y, nX= 2, Bn= None):
     return S
 
 
-def Opt_YbyX(df, X, Y, splitX, Bn= None, cost_mat = None):
+def Opt_YbyX(df, X, Y, splitX, Bn= None):
     '''
     Return candidate MIC-score given a fixed partition over X and a grid budget: xy <= Bn
     '''
@@ -73,7 +73,7 @@ def Opt_YbyX(df, X, Y, splitX, Bn= None, cost_mat = None):
     df[X] = oldX # Restore original df[X]
     return score, splitY
 
-def MIC_LocalSearch(df, X, Y, T, S:localSearch.Solution, p= [0.1, 0.1, 0.1, 0.9], maxD= 3):
+def MIC_LocalSearch(df, X, Y, T, S:localSearch.Solution, nseed= 30, p= [0.1, 0.5, 0.5, 0.7], maxD= 3, Bn= None):
     '''
     Calculate MIC using Local Search.
 
@@ -97,43 +97,56 @@ def MIC_LocalSearch(df, X, Y, T, S:localSearch.Solution, p= [0.1, 0.1, 0.1, 0.9]
     archive = set()
     archive.add(S._encode())
 
+    if Bn is None:
+        Bn = int(len(df) ** 0.6)
+
+    bestS = localSearch.Solution(S.maskX, S.maskY, S.fixCol, S.score)
+    current_type = 'None'
+
     # Iterations
     for t in range(T):
         fixed_col = X
         if S.fixCol == 1:
             fixed_col = Y
-        print(f'Iteration {t}: Score = {S.score}, fixed column = {fixed_col}')
+        print(f'Iteration {t}: Score = {S.score}, fixed column = {fixed_col}, operation = {current_type}')
+
+        switchS = localSearch.Solution(S.maskX, S.maskY, 1 - S.fixCol, S.score)
 
         # Mutation
-        nS = localSearch.Mutate(S, p, maxD)
-        patience = 10
-        while nS._encode() in archive:
-            nS = localSearch.Mutate(S, p, maxD)
-            patience -= 1
-            if patience == 0:
-                break
-        if patience == 0:
-            continue
-        archive.add(nS._encode())
+        nS_list = localSearch.exhaustMutate(S) + localSearch.exhaustMutate(switchS)
+        flag = False
+        idx = np.arange(len(nS_list))
+        np.random.shuffle(idx)
+        idx_list = idx[0:min(nseed, len(idx))]
 
-        # Update one feature w.r.t the fixed feature
-        if nS.fixCol == 0:
-            spltX = utils.mask2Split(nS.maskX, valX)
-            score, splt = Opt_YbyX(df, X, Y, spltX)
-            nS.score = score
-            nS.maskY = utils.split2Mask(splt, valY)
-        else:
-            spltY = utils.mask2Split(nS.maskY, valY)
-            score, splt = Opt_YbyX(df, Y, X, spltY)
-            nS.score = score
-            nS.maskX = utils.split2Mask(splt, valX)
+        for i in range(len(idx_list)):
+            (nS, operation_type) = nS_list[idx_list[i]]
+            if nS._encode() in archive:
+                continue
+            archive.add(nS._encode())
 
-        # Update solution
-        if nS.score > S.score:
-            S.maskX = nS.maskX
-            S.maskY = nS.maskY
-            S.score = nS.score
-            S.fixCol = nS.fixCol
+            # Update one feature w.r.t the fixed feature
+            if nS.fixCol == 0:
+                spltX = utils.mask2Split(nS.maskX, valX)
+                score, splt = Opt_YbyX(df, X, Y, spltX)
+                nS.score = score
+                nS.maskY = utils.split2Mask(splt, valY)
+            else:
+                spltY = utils.mask2Split(nS.maskY, valY)
+                score, splt = Opt_YbyX(df, Y, X, spltY)
+                nS.score = score
+                nS.maskX = utils.split2Mask(splt, valX)
 
-    print(f'Final score: {S.score}')
-    return S
+            # Update solution
+            if nS.score > S.score:
+                S = localSearch.Solution(nS.maskX, nS.maskY, nS.fixCol, nS.score)
+                bestS = localSearch.Solution(nS.maskX, nS.maskY, nS.fixCol, nS.score)
+                flag = True
+                current_type = operation_type
+                
+        if not flag:
+            print(f'Final solution: Score = {S.score}, fixed column = {fixed_col}, operation = {current_type}')
+            break
+
+    print(f'Final score: {bestS.score}')
+    return bestS

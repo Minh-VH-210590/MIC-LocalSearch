@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import math
 
 def visualize(viz, xtitle, ytitle, title, show = False, dir = None, legend = True):
     '''
@@ -137,6 +138,9 @@ def discretizeFea(df, fea, split):
     '''
     # print(df[fea])
     full_split = [df[fea].min()-1] + list(split) + [df[fea].max()+1] # Adding the smallest and largest value to the split-list
+    # if fea == 'Y':
+    #     print(df[fea])
+    #     print(pd.cut(df[fea], bins= full_split, labels= False))
     return pd.cut(df[fea], bins= full_split, labels= False)
 
 def mask2Split(mask, val):
@@ -176,7 +180,7 @@ def split2Mask(split, val):
     mask = np.zeros_like(val).astype(int)
     
     for i in range(len(val)):
-        if splt_ptr < len(split) and val[i] == split[splt_ptr]:
+        if splt_ptr < len(split) and math.fabs(val[i] - split[splt_ptr]) < 1e-3:
             mask[i] = 1
             splt_ptr += 1
         else:
