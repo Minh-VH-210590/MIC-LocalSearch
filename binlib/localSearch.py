@@ -1,6 +1,8 @@
 # Utilities for local search
 import numpy as np
 
+from binlib import mic, utils, metrics
+
 # Solution Class #
 class Solution:
     def __init__(self, maskX, maskY, fixCol, score):
@@ -42,6 +44,60 @@ class Solution:
                 for extra in extras:
                     file.write(str(extra) + '\n')
             file.close()
+
+    def _copy(self):
+        nS = Solution(self.maskX, self.maskY, self.fixCol, self.score)
+        return nS
+    
+    def _max_score(self, df, X, Y, valX, valY, metric= 'mi', Bn= None):
+        '''
+        Calculate the maximum score obtained by the solution, 
+        where the non-fixed column is not discretized
+        '''
+        score = 0
+        if Bn is None:
+            Bn = len(df) ** 0.6
+
+        # X is fixed
+        if self.fixCol == 0:
+            dX_val = utils.discretizeFea(df, X, utils.mask2Split(self.maskX, valX))
+            nX = max(dX_val) + 1
+            nY = int(Bn / nX)
+
+            if nX <= 1 or nY <= 1:
+                return 0
+            
+            oldX = df[X].copy()
+            df[X] = dX_val # Replace df[X] by its discretized version
+
+            val, freq, _ = utils.makePrebins(df, Y, X, num_classes= nX)
+            for i in range(len(val) + 1):
+                score += metrics.getMetric(freq[:, i], freq, metric)
+
+            df[X] = oldX.copy()
+            # score = score / np.log2(min(nX, nY))
+        
+        else:
+            dY_val = utils.discretizeFea(df, Y, utils.mask2Split(self.maskY, valY))
+            nY = max(dY_val) + 1
+            nX = int(Bn / nY)
+
+            if nY <= 1 or nX <= 1:
+                return 0
+            
+            oldY = df[Y].copy()
+            df[Y] = dY_val # Replace df[X] by its discretized version
+
+            val, freq, _ = utils.makePrebins(df, X, Y, num_classes= nY)
+            for i in range(len(val) + 1):
+                score += metrics.getMetric(freq[:, i], freq, metric)
+
+            df[Y] = oldY.copy()
+            # score = score / np.log2(min(nX, nY))
+
+        # print(score)
+        # return score
+        return score
 
 # Operators #
 def turnOn(mask):
@@ -264,7 +320,7 @@ def Mutate(S, p, maxD, Bn):
 
     return [nS]
 
-def exhaustMutate(S:Solution):
+def exhaustMutate(S:Solution, df, X, Y, Bn):
     '''
     Exhaustively mutate current solution S, using the probability vector p for operators.
 
@@ -280,15 +336,22 @@ def exhaustMutate(S:Solution):
     if S.fixCol == 1:
         mask = SmaskY
 
+    valX = utils.makeVal(df, X)
+    valY = utils.makeVal(df, Y)
+
     # TurnOn
     masks = exhaustTurnOn(mask)
     if S.fixCol == 0:
         for m in masks:
             nS = Solution(m, SmaskY, SfixCol, Sscore)
+            if nS._max_score(df, X, Y, valX, valY, Bn= Bn) < Sscore:
+                continue
             candidates.append((nS, 'turnOn'))
     else:
         for m in masks:
             nS = Solution(SmaskX, m, SfixCol, Sscore)
+            if nS._max_score(df, X, Y, valX, valY, Bn= Bn) < Sscore:
+                continue
             candidates.append((nS, 'turnOn'))
 
     # TurnOff
@@ -296,10 +359,14 @@ def exhaustMutate(S:Solution):
     if S.fixCol == 0:
         for m in masks:
             nS = Solution(m, SmaskY, SfixCol, Sscore)
+            if nS._max_score(df, X, Y, valX, valY, Bn= Bn) < Sscore:
+                continue
             candidates.append((nS, 'turnOff'))
     else:
         for m in masks:
             nS = Solution(SmaskX, m, SfixCol, Sscore)
+            if nS._max_score(df, X, Y, valX, valY, Bn= Bn) < Sscore:
+                continue
             candidates.append((nS, 'turnOff'))
 
     # Move
@@ -312,13 +379,43 @@ def exhaustMutate(S:Solution):
     if S.fixCol == 0:
         for m in masks:
             nS = Solution(m, SmaskY, SfixCol, Sscore)
+            if nS._max_score(df, X, Y, valX, valY, Bn= Bn) < Sscore:
+                continue
             candidates.append((nS, 'Move'))
     else:
         for m in masks:
             nS = Solution(SmaskX, m, SfixCol, Sscore)
+            if nS._max_score(df, X, Y, valX, valY, Bn= Bn) < Sscore:
+                continue
             candidates.append((nS, 'Move'))
 
     # Adding axis-switch solution by the end of candidates
     # candidates.append((Solution(SmaskX, SmaskY, 1 - SfixCol, Sscore), 'Switch'))
     
     return candidates
+
+def Switch(S:Solution, df, X, Y):
+    MAX_SCORE = S.score
+    valX = utils.makeVal(df, X)
+    valY = utils.makeVal(df, Y)
+    
+    while True:
+        nS = S._copy()
+        nS.fixCol = 1 - nS.fixCol # Switch axis
+
+        if nS.fixCol == 0:
+            spltX = utils.mask2Split(nS.maskX, valX)
+            score, splt = mic.Opt_YbyX(df, X, Y, spltX)
+            nS.score = score
+            nS.maskY = utils.split2Mask(splt, valY)
+        else:
+            spltY = utils.mask2Split(nS.maskY, valY)
+            score, splt = mic.Opt_YbyX(df, Y, X, spltY)
+            nS.score = score
+            nS.maskX = utils.split2Mask(splt, valX)
+        
+        if nS.score > MAX_SCORE:
+            MAX_SCORE = nS.score
+            S = nS._copy()
+        else:
+            return S

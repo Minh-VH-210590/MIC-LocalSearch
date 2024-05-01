@@ -67,8 +67,8 @@ def _chisquare(freq, D):
         tmp = tmp / float(num_freq * class_margin_D[i])
         score += tmp
 
-    # score = score * |D| / |X|
-    score = float(score * num_D / num_freq)
+    # # score = score * |D| / |X|
+    # score = float(score * num_D / num_freq)
     return score
 
 def _mi(freq, D):
@@ -101,7 +101,7 @@ def _mi(freq, D):
         # inlog = |D| * |X_c| / (|X| * |D_c|)
         inlog = float(num_D * class_margin_freq[i] / (num_freq * class_margin_D[i]))
         # tmp = |X_c| * log(inlog)
-        tmp = float(class_margin_freq[i] * math.log(inlog))
+        tmp = float(class_margin_freq[i] * np.log2(inlog))
         score += tmp
 
     # score = score / |D|

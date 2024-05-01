@@ -2,9 +2,11 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+import time
+
 from binlib import utils, metrics, binalgo, localSearch
 
-def genSolution(df, X, Y, nX= 2, Bn= None):
+def genSolution(df, X, Y, nX= 2, Bn= None, exact= False, fixcol= None):
     '''
     Generate a random solution with X being fixed and Y is optimized w.r.t X
 
@@ -32,6 +34,35 @@ def genSolution(df, X, Y, nX= 2, Bn= None):
     for i in range(nX-1):
         localSearch.turnOn(maskX)
     maskX[-1] = 1
+    archive = []
+
+    if exact:
+        assert fixcol == 0 or fixcol == 1
+        startTime = time.time()
+        scoreList = [-1]
+        bestSol = None
+        mxScore = 0
+        for i in range(len(maskX)):
+            if i % 10 == 0:
+                print(f"Generating {i}-th solution with fixed column {X}. Current record: {mxScore}")
+            new_mask = np.zeros_like(valX).astype(int)
+            new_mask[i] = 1
+            score, splt = Opt_YbyX(df, X, Y, splitX = utils.mask2Split(new_mask, valX), Bn= Bn)
+            maskY = utils.split2Mask(splt, valY)
+
+            if fixcol == 0:
+                nS = localSearch.Solution(maskX, maskY, fixCol = fixcol, score = score)
+            else:
+                nS = localSearch.Solution(maskY, maskX, fixCol = fixcol, score = score)
+            archive.append(nS._encode())
+
+            if score > mxScore:
+                bestSol = nS._copy()
+                mxScore = score
+
+            scoreList.append(score)
+        print(f'Best score: {max(scoreList)}, Runtime: {time.time() - startTime}')
+        return scoreList, bestSol, set(archive)
 
     # Optimize Y-axis
     score, splt = Opt_YbyX(df, X, Y, splitX = utils.mask2Split(maskX, valX), Bn= Bn)
@@ -62,18 +93,18 @@ def Opt_YbyX(df, X, Y, splitX, Bn= None):
     if nX <= 1 or nY <= 1:
         return 0, []
 
-    oldX = df[X]
+    oldX = df[X].copy()
     df[X] = dX_val # Replace df[X] by its discretized version
 
     # Conisder discretized X as the target class for Y
     val, freq, _ = utils.makePrebins(df, Y, X, num_classes= nX)
-    score, splitY, opt_nY = binalgo.scoreDP(val, freq, R = nY)
-    score = score / np.log(min(nX, opt_nY))
+    score, splitY, opt_nY = binalgo.scoreDP(val, freq, R = nY, mic = True, nX = nX)
+    score = score
 
-    df[X] = oldX # Restore original df[X]
+    df[X] = oldX.copy() # Restore original df[X]
     return score, splitY
 
-def MIC_LocalSearch(df, X, Y, T, S:localSearch.Solution, nseed= 30, p= [0.1, 0.5, 0.5, 0.7], maxD= 3, Bn= None):
+def MIC_LocalSearch(df, X, Y, T, S:localSearch.Solution, nseed= 30, Bn= None, init_archive= None):
     '''
     Calculate MIC using Local Search.
 
@@ -84,17 +115,19 @@ def MIC_LocalSearch(df, X, Y, T, S:localSearch.Solution, nseed= 30, p= [0.1, 0.5
     Y {String}      : Feature #2 name
     T {int}         : Number of iteration
     S {localSearch.Solution} : Initial solution
-    p {array of length 4}    : Mutation configs
-    maxD {int}               : Maximal split point moving distance
 
     Ouput:
     -----
     S {localSearch.Solution} : Final solution
     '''
+    start_time = time.time()
     # Preparation
     valX = utils.makeVal(df, X)
     valY = utils.makeVal(df, Y)
-    archive = set()
+    if init_archive is None:
+        archive = set()
+    else:
+        archive = set(init_archive.copy())
     archive.add(S._encode())
 
     if Bn is None:
@@ -103,50 +136,89 @@ def MIC_LocalSearch(df, X, Y, T, S:localSearch.Solution, nseed= 30, p= [0.1, 0.5
     bestS = localSearch.Solution(S.maskX, S.maskY, S.fixCol, S.score)
     current_type = 'None'
 
+    tabu_flag = False
+
     # Iterations
     for t in range(T):
+        if t % 10 == 0 and t > 0:
+            S = genSolution(df, X, Y, nX= int(t/5) + 1)
+
         fixed_col = X
         if S.fixCol == 1:
             fixed_col = Y
         print(f'Iteration {t}: Score = {S.score}, fixed column = {fixed_col}, operation = {current_type}')
-
+        
         switchS = localSearch.Solution(S.maskX, S.maskY, 1 - S.fixCol, S.score)
 
         # Mutation
-        nS_list = localSearch.exhaustMutate(S) + localSearch.exhaustMutate(switchS)
+        nS_shortlist = localSearch.exhaustMutate(S, df, X, Y, Bn) + localSearch.exhaustMutate(switchS, df, X, Y, Bn)
+        nS_list = []
+
+        for (nS, operation_type) in nS_shortlist:
+            if nS._encode() in archive:
+                continue
+            nS_list.append((nS._copy(), operation_type))
+
         flag = False
         idx = np.arange(len(nS_list))
+        print(len(nS_list))
         np.random.shuffle(idx)
-        idx_list = idx[0:min(nseed, len(idx))]
 
-        for i in range(len(idx_list)):
-            (nS, operation_type) = nS_list[idx_list[i]]
+        if nseed > 0:
+            idx_list = idx[0:min(nseed, len(idx))]
+        else:
+            idx_list = idx[0:len(idx)]
+
+        candidates = [nS_list[x] for x in idx_list]
+        candidates.append((localSearch.Switch(S, df, X, Y), 'Switch'))
+
+        for (nS, operation_type) in candidates:
             if nS._encode() in archive:
                 continue
             archive.add(nS._encode())
 
             # Update one feature w.r.t the fixed feature
-            if nS.fixCol == 0:
-                spltX = utils.mask2Split(nS.maskX, valX)
-                score, splt = Opt_YbyX(df, X, Y, spltX)
-                nS.score = score
-                nS.maskY = utils.split2Mask(splt, valY)
-            else:
-                spltY = utils.mask2Split(nS.maskY, valY)
-                score, splt = Opt_YbyX(df, Y, X, spltY)
-                nS.score = score
-                nS.maskX = utils.split2Mask(splt, valX)
+            if operation_type != 'Switch':
+                if nS.fixCol == 0:
+                    spltX = utils.mask2Split(nS.maskX, valX)
+                    score, splt = Opt_YbyX(df, X, Y, spltX)
+                    nS.score = score
+                    nS.maskY = utils.split2Mask(splt, valY)
+                else:
+                    spltY = utils.mask2Split(nS.maskY, valY)
+                    score, splt = Opt_YbyX(df, Y, X, spltY)
+                    nS.score = score
+                    nS.maskX = utils.split2Mask(splt, valX)
 
             # Update solution
             if nS.score > S.score:
-                S = localSearch.Solution(nS.maskX, nS.maskY, nS.fixCol, nS.score)
-                bestS = localSearch.Solution(nS.maskX, nS.maskY, nS.fixCol, nS.score)
+                S = nS._copy()
                 flag = True
+                tabu_flag = False
                 current_type = operation_type
+
+            if nS.score > bestS.score:
+                bestS = nS._copy()
+                flag = True
+                tabu_flag = False
+                current_type = operation_type
+            
+            elif tabu_flag:
+                coin = np.random.binomial(n=1, p=np.exp(nS.score - S.score)/(T+1))
+                if coin == 1:
+                    S = nS._copy()
+                    flag = True
+                    current_type = operation_type
                 
         if not flag:
-            print(f'Final solution: Score = {S.score}, fixed column = {fixed_col}, operation = {current_type}')
-            break
+            print('Activate Tabu search.')
+            tabu_flag = True
+            # print(f'Final solution: Score = {S.score}, fixed column = {fixed_col}, operation = {current_type}')
+            # break
+        else:
+            print('Deactivate Tabu search')
+            tabu_flag = False
 
-    print(f'Final score: {bestS.score}')
+
+    print(f'Final score: {bestS.score}, Runtime: {time.time() - start_time}')
     return bestS

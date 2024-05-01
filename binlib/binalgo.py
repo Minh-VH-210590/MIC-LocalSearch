@@ -22,7 +22,7 @@ def Opt(val, cand, mode):
             return cand, True
         return val, False
 
-def scoreDP(val, freq, mode = 'max', metric = 'mi', L = 2, R = 15, cost_mat = None):
+def scoreDP(val, freq, mode = 'max', metric = 'mi', L = 2, R = 15, cost_mat = None, mic = False, nX = None):
     '''
     Proposed score-wise Dynamic programming algorithm
     NOTE: For DP[v][l], v is 1-based and l is 1-based
@@ -46,6 +46,9 @@ def scoreDP(val, freq, mode = 'max', metric = 'mi', L = 2, R = 15, cost_mat = No
     
     '''
     # print("Start of scoreDP")
+    if mic:
+        assert nX is not None and type(nX) is int
+
     n_val = freq.shape[1] - 1
 
     dp = np.zeros(shape = (n_val + 5, R + 5)) # dp solution table
@@ -85,7 +88,11 @@ def scoreDP(val, freq, mode = 'max', metric = 'mi', L = 2, R = 15, cost_mat = No
                     dp[v, l] = cand_dp
                     trace[v, l] = u # The bin (u, v] is included in the corresponding solution
 
-        opt_score, update = Opt(opt_score, dp[n_val, l], mode) # Update opt_score
+        if mic:
+            candidate = dp[n_val, l] / np.log2(min(l, nX))
+        else:
+            candidate = dp[n_val, l]
+        opt_score, update = Opt(opt_score, candidate, mode) # Update opt_score
         if update:
             opt_l = l # Update opt_l
 
