@@ -36,6 +36,7 @@ def genSolution(df, X, Y, nX= 2, Bn= None, exact= False, fixcol= None):
     maskX[-1] = 1
     archive = []
 
+    # Exhaustive search
     if exact:
         assert fixcol == 0 or fixcol == 1
         startTime = time.time()
@@ -140,25 +141,30 @@ def MIC_LocalSearch(df, X, Y, T, S:localSearch.Solution, nseed= 30, Bn= None, in
 
     # Iterations
     for t in range(T):
+        # Choose a new seed every 10 iterations
         if t % 10 == 0 and t > 0:
             S = genSolution(df, X, Y, nX= int(t/5) + 1)
 
+        # Set fixed column
         fixed_col = X
         if S.fixCol == 1:
             fixed_col = Y
         print(f'Iteration {t}: Score = {S.score}, fixed column = {fixed_col}, operation = {current_type}')
         
+        # Generate switch solution
         switchS = localSearch.Solution(S.maskX, S.maskY, 1 - S.fixCol, S.score)
 
-        # Mutation
+        # Generate neighbors from root solutions (original and switched solutions)
         nS_shortlist = localSearch.exhaustMutate(S, df, X, Y, Bn) + localSearch.exhaustMutate(switchS, df, X, Y, Bn)
         nS_list = []
 
+        # Remove visited candidates
         for (nS, operation_type) in nS_shortlist:
             if nS._encode() in archive:
                 continue
             nS_list.append((nS._copy(), operation_type))
 
+        # Flag for tabu search
         flag = False
         idx = np.arange(len(nS_list))
         print(len(nS_list))
@@ -167,6 +173,7 @@ def MIC_LocalSearch(df, X, Y, T, S:localSearch.Solution, nseed= 30, Bn= None, in
         if nseed > 0:
             idx_list = idx[0:min(nseed, len(idx))]
         else:
+            # If nseed < 0, traverse through ALL shortlisted neighbours
             idx_list = idx[0:len(idx)]
 
         candidates = [nS_list[x] for x in idx_list]
@@ -180,9 +187,12 @@ def MIC_LocalSearch(df, X, Y, T, S:localSearch.Solution, nseed= 30, Bn= None, in
             # Update one feature w.r.t the fixed feature
             if operation_type != 'Switch':
                 if nS.fixCol == 0:
+                    # Convert mask to split scheme
                     spltX = utils.mask2Split(nS.maskX, valX)
+                    # Optimize axis
                     score, splt = Opt_YbyX(df, X, Y, spltX)
                     nS.score = score
+                    # Obtain mask after optimization
                     nS.maskY = utils.split2Mask(splt, valY)
                 else:
                     spltY = utils.mask2Split(nS.maskY, valY)
@@ -197,13 +207,16 @@ def MIC_LocalSearch(df, X, Y, T, S:localSearch.Solution, nseed= 30, Bn= None, in
                 tabu_flag = False
                 current_type = operation_type
 
+            # Update current solutions
             if nS.score > bestS.score:
                 bestS = nS._copy()
                 flag = True
                 tabu_flag = False
                 current_type = operation_type
             
+            # Tabu search
             elif tabu_flag:
+                # Metropolis search
                 coin = np.random.binomial(n=1, p=np.exp(nS.score - S.score)/(T+1))
                 if coin == 1:
                     S = nS._copy()
