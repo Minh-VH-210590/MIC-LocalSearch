@@ -1,3 +1,5 @@
+# MIC-Local search algorithm is called in `mysubplot` procedure
+
 from __future__ import division
 import numpy as np
 import matplotlib.pyplot as plt
@@ -17,10 +19,31 @@ def mysubplot(x, y, numRows, numCols, plotNum,
     print(len(df))
     print(df.head())
 
-    S0 = mic.genSolution(df, 'X', 'Y')
-    S = mic.MIC_LocalSearch(df, 'X', 'Y', T= 100, S= S0)
+    ### MIC Local Search ###
 
+    # Exhaustive initialization
+    # Exhaustive search over fixed column X, where X is divided into 2 bins
+    scoreListX, SX, archiveX = mic.genSolution(df, 'X', 'Y', exact= True, fixcol= 0)
+    # Exhaustive search over fixed column Y, where X is divided into 2 bins
+    scoreListY, SY, archiveY = mic.genSolution(df, 'Y', 'X', exact= True, fixcol= 1)
+    # Take the best solution found
+    SCORE = np.around(max(max(scoreListX), max(scoreListY)), 3)
+    if max(scoreListX) > max(scoreListY):
+        S0 = SX
+    else:
+        S0 = SY
+    # List of visited solution
+    init_archive = set(list(archiveX) + list(archiveY))
+    
+    # S0 = mic.genSolution(df, 'X', 'Y') # Generate random solution
+    '''
+    Find solution regarding columns named 'X' and 'Y' from initial solution S0
+    over T = 20 iterations, with nseed = 30 neighbor solutions considered at each iteration.
+    To avoid revisiting solutions, init_archive is added.
+    '''
+    S = mic.MIC_LocalSearch(df, 'X', 'Y', T= 20, S= S0, nseed= 30, init_archive= init_archive)
     SCORE = np.around(S.score, 3)
+
     ax = plt.subplot(numRows, numCols, plotNum,
                      xlim=xlim, ylim=ylim)
     ax.set_title('Pearson r=%.1f\nMIC=%.3f' % (r, SCORE),fontsize=10)
@@ -37,6 +60,7 @@ def rotation(xy, t):
 
 def mvnormal(n=1000):
     cors = [1.0, 0.8, 0.4, 0.0, -0.4, -0.8, -1.0]
+    # cors = [0.4, 0.0, -0.8]
     for i, cor in enumerate(cors):
         cov = [[1, cor],[cor, 1]]
         xy = rs.multivariate_normal([0, 0], cov, n)
@@ -45,6 +69,7 @@ def mvnormal(n=1000):
 def rotnormal(n=1000):
     ts = [0, np.pi/12, np.pi/6, np.pi/4, np.pi/2-np.pi/6,
           np.pi/2-np.pi/12, np.pi/2]
+    # ts = [0, np.pi/12, np.pi/6, np.pi/2]
     cov = [[1, 1],[1, 1]]
     xy = rs.multivariate_normal([0, 0], cov, n)
     for i, t in enumerate(ts):
