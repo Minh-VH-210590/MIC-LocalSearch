@@ -63,7 +63,7 @@ def makePrebins(df, feature, label, num_classes = 2):
     -----
     df (pandas.DataFrame)   : List of instances to pre-discretize.
     feature                 : interested feature for evaluation.
-    label                   : label column in dataset. MUST in the form of 0 ... (num_class-1) without NaN values
+    label                   : label column in dataset. MUST be in the form of 0 ... (num_class-1) without NaN values
     num_class               : number of class
 
     Output:
@@ -72,6 +72,7 @@ def makePrebins(df, feature, label, num_classes = 2):
     freq (numpy.ndarray)   : Frequency of each aforementioned value (1-based)
     valdict (dictionary)   : val - freq mapping
     '''
+    # Prepare discretized values
     df[feature] = df[feature].astype(float)
     val = df[feature].unique()
     val = np.sort(val)
@@ -81,6 +82,7 @@ def makePrebins(df, feature, label, num_classes = 2):
 
     catcode = pd.Series(pd.Categorical(df[label], categories= df[label].unique())).cat.codes
     # print(catcode)
+    # Get number of class
     num_classes = max(catcode) + 1
 
     valdict = []
@@ -92,6 +94,7 @@ def makePrebins(df, feature, label, num_classes = 2):
             continue
         valdict[catcode[i]][df[feature][i]] += 1
 
+    # Build feature frequency with freq[0] being dummy value
     freq = []
     for i in range(num_classes):
         freq.append([0] + list(valdict[i].values()))
